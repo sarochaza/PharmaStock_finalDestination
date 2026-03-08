@@ -16,7 +16,7 @@ import 'partners/suppliers_page.dart';
 import '../stock/stock_in_page.dart';
 import '../stock/stock_out_page.dart';
 import 'package:fl_chart/fl_chart.dart';
-
+import 'billing/bills_page.dart';
 // ✅ เพิ่ม: หน้าดูรายการยาทั้งหมด (active + inactive)
 import 'all_drugs_page.dart';
 
@@ -1601,6 +1601,17 @@ try {
                                 ),
 
                                 actionPill(
+  icon: Icons.receipt_long_rounded,
+  label: 'บิล',
+  onTap: () async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const BillsPage()),
+    );
+    if (mounted) _bootstrap();
+  },
+),
+
+                                actionPill(
                                   icon: Icons.domain_rounded,
                                   label: 'ผู้ผลิต',
                                   onTap: () async {
@@ -1685,7 +1696,58 @@ try {
                 ],
               ),
 
-              const SizedBox(height: 16),
+const SizedBox(height: 14),
+
+            if (_expiredCount > 0 || _nearExpireCount > 0)
+              _panelNoFuzz(
+                title: 'แจ้งเตือน: วันหมดอายุ',
+                icon: Icons.schedule_rounded,
+                child: Column(
+                  children: [
+                    if (_expiredCount > 0)
+                      _alertRow(
+                        Icons.error_outline_rounded,
+                        'ล็อตหมดอายุ $_expiredCount รายการ',
+                        Colors.red,
+                        onTap: () => _openAlertSheet(_AlertType.expired),
+                      ),
+                    if (_nearExpireCount > 0)
+                      _alertRow(
+                        Icons.schedule_rounded,
+                        'ล็อตใกล้หมดอายุ $_nearExpireCount รายการ',
+                        Colors.orange,
+                        onTap: () => _openAlertSheet(_AlertType.nearExpire),
+                      ),
+                  ],
+                ),
+              ),
+
+            if (_expiredCount > 0 || _nearExpireCount > 0) const SizedBox(height: 12),
+
+            if (_lowStockCount > 0 || _outStockCount > 0)
+              _panelNoFuzz(
+                title: 'แจ้งเตือน: สต็อกสินค้า',
+                icon: Icons.inventory_2_rounded,
+                child: Column(
+                  children: [
+                    if (_lowStockCount > 0)
+                      _alertRow(
+                        Icons.inventory_2_rounded,
+                        'ยาสต็อกต่ำ $_lowStockCount รายการ',
+                        Colors.deepOrange,
+                        onTap: () => _openAlertSheet(_AlertType.lowStock),
+                      ),
+                    if (_outStockCount > 0)
+                      _alertRow(
+                        Icons.remove_shopping_cart_rounded,
+                        'ยาไม่มีสต็อก $_outStockCount รายการ',
+                        Colors.redAccent,
+                        onTap: () => _openAlertSheet(_AlertType.outStock),
+                      ),
+                  ],
+                ),
+              ),
+              /*const SizedBox(height: 16),
 
               if (_lowStockCount > 0 || _outStockCount > 0)
                 _panelNoFuzz(
@@ -1709,9 +1771,11 @@ try {
                         ),
                     ],
                   ),
-                ),
-
+                ),*/
             ],
+
+
+            
           ),
 
             const SizedBox(height: 12),

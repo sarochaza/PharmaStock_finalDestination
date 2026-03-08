@@ -172,10 +172,11 @@ class _StockOutPageState extends State<StockOutPage> {
     final ownerId = _ownerId();
 
     final rows = await _client
-        .from('drugs')
-        .select('id, generic_name, code, base_unit, category')
-        .eq('owner_id', ownerId)
-        .order('generic_name', ascending: true);
+    .from('drugs')
+    .select('id, generic_name, code, base_unit, category')
+    .eq('owner_id', ownerId)
+    .eq('is_active', true)   // ✅ เพิ่มบรรทัดนี้
+    .order('generic_name', ascending: true);
 
     final list = (rows as List)
         .map((r) => _DrugOption(
