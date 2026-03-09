@@ -772,15 +772,15 @@ class _ReceiptItemsSheetState extends State<ReceiptItemsSheet> {
       final rid = (widget.receipt['id'] ?? '').toString();
       if (rid.isEmpty) throw Exception('receipt_id ไม่ถูกต้อง');
 
-      final res = await _sb
-          .from('stock_out_items')
-          .select('''
-            id, receipt_id, drug_id, lot_no, exp_date, qty_base, sell_per_base, line_total, created_at,
-            drugs(code, generic_name, brand_name, base_unit, strength, dosage_form, form)
-          ''')
-          .eq('owner_id', ownerId)
-          .eq('receipt_id', rid)
-          .order('created_at', ascending: true);
+     final res = await _sb
+    .from('stock_out_items')
+    .select('''
+      id, receipt_id, drug_id, lot_no, exp_date, qty_base, sell_per_base, line_total, created_at,
+      drugs(code, generic_name, brand_name, base_unit, strength, dosage_form)
+    ''')
+    .eq('owner_id', ownerId)
+    .eq('receipt_id', rid)
+    .order('created_at', ascending: true);
 
       _items = (res as List)
           .map((e) => Map<String, dynamic>.from(e as Map))

@@ -574,7 +574,9 @@ class _AddDrugPageState extends State<AddDrugPage> {
         (_selectedManufacturer?['name'] ?? '').toString().trim();
     final category = _category.text.trim();
     final exampleText = _exampleText.text.trim();
-    final autoDispenseLabel = _autoDispenseLabel.text.trim();
+    final autoDispenseLabel = _autoDispenseLabel.text.trim().isEmpty
+    ? _baseUnit
+    : _autoDispenseLabel.text.trim();
     final baseUnit = _baseUnit.trim();
     final packUnit = _packUnit.text.trim();
     final packToBase = _tryNum(_packToBase.text);
@@ -1124,121 +1126,125 @@ class _AddDrugPageState extends State<AddDrugPage> {
     return true;
   }
 
-  Future<void> _submit() async {
-    if (_saving) return;
+Future<void> _submit() async {
+  if (_saving) return;
 
-    if (!_validateBeforeSubmit()) return;
+  if (!_validateBeforeSubmit()) return;
 
-    if (!_isEdit) {
-      try {
-        final duplicateItems = await _findDuplicateDrugs();
-        if (duplicateItems.isNotEmpty) {
-          final confirmed = await _confirmDuplicateDrugs(duplicateItems);
-          if (!confirmed) return;
-        }
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('ตรวจสอบรายการซ้ำไม่สำเร็จ: $e')),
-        );
-        return;
-      }
-    }
-
-    setState(() => _saving = true);
-    await _showLoading();
-
+  if (!_isEdit) {
     try {
-      final code = _code.text.trim().isEmpty ? null : _code.text.trim();
-      final packToBase = _tryNum(_packToBase.text)!;
-      final reorderPoint = _computedReorderPointBase();
-      final expiryDays = _tryInt(_expiryAlertDays.text) ?? 90;
-
-      final manufacturerNameToSave =
-          (_selectedManufacturer?['name'] ?? '').toString().trim();
-
-      final units = _units.map((u) {
-        return DispenseUnitInput(
-          unitName: u.unitName,
-          toBase: u.toBase,
-          isDefault: u.isDefault,
-          isActive: u.isActive,
-        );
-      }).toList();
-
-      if (_isEdit) {
-        await repo.updateDrugWithUnits(
-          drugId: widget.drugId!,
-          code: code,
-          genericName: _generic.text.trim(),
-          brandName: _brand.text.trim(),
-          dosageForm: _dosageForm.text.trim(),
-          strength: _strength.text.trim(),
-          baseUnit: _baseUnit,
-          packUnit: _packUnit.text.trim(),
-          packToBase: packToBase,
-          category: _category.text.trim(),
-          manufacturer: manufacturerNameToSave,
-          status: _status,
-          reorderPoint: reorderPoint,
-          expiryAlertDays: expiryDays,
-          exampleText: _exampleText.text.trim(),
-          autoDispenseLabel: _autoDispenseLabel.text.trim(),
-          units: units,
-        );
-      } else {
-        await repo.addDrugWithUnits(
-          code: code,
-          genericName: _generic.text.trim(),
-          brandName: _brand.text.trim(),
-          dosageForm: _dosageForm.text.trim(),
-          strength: _strength.text.trim(),
-          baseUnit: _baseUnit,
-          packUnit: _packUnit.text.trim(),
-          packToBase: packToBase,
-          category: _category.text.trim(),
-          manufacturer: manufacturerNameToSave,
-          status: _status,
-          reorderPoint: reorderPoint,
-          expiryAlertDays: expiryDays,
-          exampleText: _exampleText.text.trim(),
-          autoDispenseLabel: _autoDispenseLabel.text.trim(),
-          units: units,
-        );
+      final duplicateItems = await _findDuplicateDrugs();
+      if (duplicateItems.isNotEmpty) {
+        final confirmed = await _confirmDuplicateDrugs(duplicateItems);
+        if (!confirmed) return;
       }
-
-      _closeLoading();
-      if (!mounted) return;
-
-      final msg = _isEdit ? 'แก้ไขข้อมูลยาเรียบร้อยแล้ว' : 'เพิ่มยาเรียบร้อยแล้ว';
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle_rounded, color: Colors.white),
-                const SizedBox(width: 10),
-                Expanded(child: Text(msg)),
-              ],
-            ),
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-
-      await Future.delayed(const Duration(milliseconds: 900));
-      Navigator.of(context).pop(true);
     } catch (e) {
-      _closeLoading();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')),
+        SnackBar(content: Text('ตรวจสอบรายการซ้ำไม่สำเร็จ: $e')),
       );
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      return;
     }
   }
+
+  setState(() => _saving = true);
+  await _showLoading();
+
+  try {
+    final code = _code.text.trim().isEmpty ? null : _code.text.trim();
+    final packToBase = _tryNum(_packToBase.text)!;
+    final reorderPoint = _computedReorderPointBase();
+    final expiryDays = _tryInt(_expiryAlertDays.text) ?? 90;
+
+    final manufacturerNameToSave =
+        (_selectedManufacturer?['name'] ?? '').toString().trim();
+
+    final autoDispenseLabelToSave = _autoDispenseLabel.text.trim().isEmpty
+        ? _baseUnit
+        : _autoDispenseLabel.text.trim();
+
+    final units = _units.map((u) {
+      return DispenseUnitInput(
+        unitName: u.unitName,
+        toBase: u.toBase,
+        isDefault: u.isDefault,
+        isActive: u.isActive,
+      );
+    }).toList();
+
+    if (_isEdit) {
+      await repo.updateDrugWithUnits(
+        drugId: widget.drugId!,
+        code: code,
+        genericName: _generic.text.trim(),
+        brandName: _brand.text.trim(),
+        dosageForm: _dosageForm.text.trim(),
+        strength: _strength.text.trim(),
+        baseUnit: _baseUnit,
+        packUnit: _packUnit.text.trim(),
+        packToBase: packToBase,
+        category: _category.text.trim(),
+        manufacturer: manufacturerNameToSave,
+        status: _status,
+        reorderPoint: reorderPoint,
+        expiryAlertDays: expiryDays,
+        exampleText: _exampleText.text.trim(),
+        autoDispenseLabel: autoDispenseLabelToSave,
+        units: units,
+      );
+    } else {
+      await repo.addDrugWithUnits(
+        code: code,
+        genericName: _generic.text.trim(),
+        brandName: _brand.text.trim(),
+        dosageForm: _dosageForm.text.trim(),
+        strength: _strength.text.trim(),
+        baseUnit: _baseUnit,
+        packUnit: _packUnit.text.trim(),
+        packToBase: packToBase,
+        category: _category.text.trim(),
+        manufacturer: manufacturerNameToSave,
+        status: _status,
+        reorderPoint: reorderPoint,
+        expiryAlertDays: expiryDays,
+        exampleText: _exampleText.text.trim(),
+        autoDispenseLabel: autoDispenseLabelToSave,
+        units: units,
+      );
+    }
+
+    _closeLoading();
+    if (!mounted) return;
+
+    final msg = _isEdit ? 'แก้ไขข้อมูลยาเรียบร้อยแล้ว' : 'เพิ่มยาเรียบร้อยแล้ว';
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(child: Text(msg)),
+            ],
+          ),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+
+    await Future.delayed(const Duration(milliseconds: 900));
+    Navigator.of(context).pop(true);
+  } catch (e) {
+    _closeLoading();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('บันทึกไม่สำเร็จ: $e')),
+    );
+  } finally {
+    if (mounted) setState(() => _saving = false);
+  }
+}
 
   InputDecoration _customInputDecoration(
     String label, {
@@ -1962,14 +1968,14 @@ _buildCard(
 
       const SizedBox(height: 16),
 
-      TextFormField(
+     /* TextFormField(
         controller: _autoDispenseLabel,
         decoration: _customInputDecoration(
           'ตั้งชื่อหน่วยจ่ายอัตโนมัติ (Auto dispense label) *',
           hintText: 'เช่น เม็ด / แคปซูล / มล.',
         ),
         validator: (v) => _req(v, 'กรุณากรอก Auto dispense label'),
-      ),
+      ),*/
     ],
   ),
 ),
