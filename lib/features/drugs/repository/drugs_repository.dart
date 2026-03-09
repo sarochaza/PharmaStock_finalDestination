@@ -452,7 +452,7 @@ class DrugsRepository {
     String? autoDispenseLabel,
     String? category,
     String? manufacturer,
-    String? barcode,
+    /*String? barcode,*/
     required String status,
     num reorderPoint = 0,
     int expiryAlertDays = 90,
@@ -480,7 +480,7 @@ class DrugsRepository {
       'category': _nullIfEmpty(category),
       'manufacturer': _nullIfEmpty(manufacturer),
 
-      'barcode': _nullIfEmpty(barcode),
+      /*'barcode': _nullIfEmpty(barcode),*/
 
       'status': status,
       'is_active': status == 'active',

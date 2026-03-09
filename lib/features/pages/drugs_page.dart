@@ -488,7 +488,7 @@ class _DrugsPageState extends State<DrugsPage> {
 
                         final packUnit = (d['pack_unit'] ?? '').toString().trim();
                         final packToBase = _toDouble(d['pack_to_base']);
-                        final reorderPoint = _toDouble(d['reorder_point'] ?? d['reorder_level']);
+                        final reorderPoint = _toDouble(d['reorder_point']);
 
                         final subtitle = [
                           if (b.isNotEmpty) b,

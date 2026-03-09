@@ -31,19 +31,17 @@ class _AddDrugPageState extends State<AddDrugPage> {
 
   String _baseUnit = 'เม็ด';
   List<String> _baseUnits = [
-  'เม็ด',
-  'แคปซูล',
-  'มล.',
-  'กรัม',
-  'ขวด',
-  'หลอด',
-  'ซอง',
-  'ชิ้น',
-];
+    'เม็ด',
+    'แคปซูล',
+    'มล.',
+    'กรัม',
+    'ขวด',
+    'หลอด',
+    'ซอง',
+    'ชิ้น',
+  ];
 
   final _packUnit = TextEditingController();
-  // ⭐ รายการหน่วยบรรจุ
-
   final _packToBase = TextEditingController();
 
   final _category = TextEditingController();
@@ -57,7 +55,14 @@ class _AddDrugPageState extends State<AddDrugPage> {
   final TextEditingController _makerSearchCtl = TextEditingController();
 
   String _status = 'active';
+
+  // ✅ reorder point input
   final _reorderPoint = TextEditingController(text: '0');
+
+  /// base = กรอกเป็นหน่วยฐาน
+  /// pack = กรอกเป็นหน่วยบรรจุ แล้วค่อยแปลงเป็นหน่วยฐานตอน save
+  String _reorderPointUnitMode = 'base';
+
   final _expiryAlertDays = TextEditingController(text: '90');
 
   final _exampleText = TextEditingController();
@@ -119,6 +124,75 @@ class _AddDrugPageState extends State<AddDrugPage> {
     }
   }
 
+  num? _currentPackToBaseSafe() {
+    final n = _tryNum(_packToBase.text);
+    if (n == null || n <= 0) return null;
+    return n;
+  }
+
+  String _fmtNum(num v) {
+    return v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
+  }
+
+  String _reorderUnitLabel() {
+    if (_reorderPointUnitMode == 'pack') {
+      final p = _packUnit.text.trim();
+      return p.isEmpty ? 'หน่วยบรรจุ' : p;
+    }
+    return _baseUnit.trim().isEmpty ? 'หน่วยฐาน' : _baseUnit;
+  }
+
+  String _reorderHelperText() {
+    final packUnit = _packUnit.text.trim();
+    final packToBase = _currentPackToBaseSafe();
+
+    if (_reorderPointUnitMode == 'base') {
+      if (packUnit.isNotEmpty && packToBase != null) {
+        return 'ระบบจะบันทึกเป็นหน่วยฐาน ($_baseUnit) โดยตรง • 1 $packUnit = ${_fmtNum(packToBase)} $_baseUnit';
+      }
+      return 'ระบบจะบันทึกเป็นหน่วยฐาน ($_baseUnit)';
+    }
+
+    if (packUnit.isEmpty || packToBase == null) {
+      return 'กรุณากรอกหน่วยบรรจุและอัตราเทียบหน่วยก่อน';
+    }
+
+    final entered = _tryNum(_reorderPoint.text);
+    if (entered == null) {
+      return 'กรอกเป็น $packUnit แล้วระบบจะแปลงเป็น $_baseUnit • 1 $packUnit = ${_fmtNum(packToBase)} $_baseUnit';
+    }
+
+    final baseValue = entered * packToBase;
+    return 'ระบบจะแปลง ${_fmtNum(entered)} $packUnit = ${_fmtNum(baseValue)} $_baseUnit';
+  }
+
+  num _computedReorderPointBase() {
+    final input = _tryNum(_reorderPoint.text) ?? 0;
+    if (_reorderPointUnitMode == 'pack') {
+      final packToBase = _currentPackToBaseSafe() ?? 1;
+      return input * packToBase;
+    }
+    return input;
+  }
+
+  void _changeReorderUnitMode(String mode) {
+    if (_reorderPointUnitMode == mode) return;
+
+    final current = _tryNum(_reorderPoint.text);
+    final packToBase = _currentPackToBaseSafe();
+
+    setState(() {
+      if (current != null && packToBase != null && packToBase > 0) {
+        if (_reorderPointUnitMode == 'base' && mode == 'pack') {
+          _reorderPoint.text = _fmtNum(current / packToBase);
+        } else if (_reorderPointUnitMode == 'pack' && mode == 'base') {
+          _reorderPoint.text = _fmtNum(current * packToBase);
+        }
+      }
+      _reorderPointUnitMode = mode;
+    });
+  }
+
   Future<void> _loadManufacturers() async {
     if (!mounted) return;
     setState(() => _isLoadingManufacturers = true);
@@ -153,7 +227,6 @@ class _AddDrugPageState extends State<AddDrugPage> {
       if (mounted) setState(() => _isLoadingManufacturers = false);
     }
   }
-  
 
   Future<void> _loadForEdit() async {
     if (!mounted) return;
@@ -181,8 +254,9 @@ class _AddDrugPageState extends State<AddDrugPage> {
       if (mName.isNotEmpty) {
         Map<String, dynamic>? found;
         try {
-          found = _manufacturersList
-              .firstWhere((m) => (m['name'] ?? '').toString() == mName);
+          found = _manufacturersList.firstWhere(
+            (m) => (m['name'] ?? '').toString() == mName,
+          );
         } catch (_) {
           found = null;
         }
@@ -190,7 +264,11 @@ class _AddDrugPageState extends State<AddDrugPage> {
       }
 
       _status = (drug['status'] ?? 'active').toString();
+
+      // ✅ DB เก็บเป็นหน่วยฐานเสมอ
+      _reorderPointUnitMode = 'base';
       _reorderPoint.text = (drug['reorder_point'] ?? 0).toString();
+
       _expiryAlertDays.text = (drug['expire_warn_days'] ?? 90).toString();
 
       _exampleText.text = (drug['example_text'] ?? '').toString();
@@ -201,13 +279,15 @@ class _AddDrugPageState extends State<AddDrugPage> {
       final baseName = _baseUnit.trim();
       final temp = <_DispenseUnitDraft>[];
 
-      temp.add(_DispenseUnitDraft(
-        unitName: baseName.isEmpty ? 'หน่วยฐาน' : baseName,
-        toBase: 1,
-        isDefault: true,
-        isBaseUnit: true,
-        isActive: true,
-      ));
+      temp.add(
+        _DispenseUnitDraft(
+          unitName: baseName.isEmpty ? 'หน่วยฐาน' : baseName,
+          toBase: 1,
+          isDefault: true,
+          isBaseUnit: true,
+          isActive: true,
+        ),
+      );
 
       for (final r in rows) {
         final name = (r['unit_name'] ?? '').toString().trim();
@@ -226,13 +306,15 @@ class _AddDrugPageState extends State<AddDrugPage> {
             toBase: 1,
           );
         } else {
-          temp.add(_DispenseUnitDraft(
-            unitName: name,
-            toBase: toBase,
-            isDefault: isDefault,
-            isBaseUnit: false,
-            isActive: isActive,
-          ));
+          temp.add(
+            _DispenseUnitDraft(
+              unitName: name,
+              toBase: toBase,
+              isDefault: isDefault,
+              isBaseUnit: false,
+              isActive: isActive,
+            ),
+          );
         }
       }
 
@@ -975,11 +1057,9 @@ class _AddDrugPageState extends State<AddDrugPage> {
 
   // ✅ เพิ่มเช็ค “กรอกครบ” ก่อนบันทึก
   bool _validateBeforeSubmit() {
-    // 1) validate ฟอร์ม
     final ok = _formKey.currentState?.validate() ?? false;
     if (!ok) return false;
 
-    // 2) เช็คผู้ผลิต (บังคับ)
     final mName = (_selectedManufacturer?['name'] ?? '').toString().trim();
     if (mName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -988,7 +1068,6 @@ class _AddDrugPageState extends State<AddDrugPage> {
       return false;
     }
 
-    // 3) เช็ค pack & conversion ให้ครบและถูกต้อง
     final pUnit = _packUnit.text.trim();
     final pToBase = _tryNum(_packToBase.text) ?? 0;
     if (pUnit.isEmpty) {
@@ -1006,7 +1085,25 @@ class _AddDrugPageState extends State<AddDrugPage> {
       return false;
     }
 
-    // 4) เช็คหน่วยจ่าย
+    final reorderValue = _tryNum(_reorderPoint.text);
+    if (reorderValue == null || reorderValue < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณากรอกค่าเตือนสต็อกต่ำเป็นตัวเลข ≥ 0')),
+      );
+      return false;
+    }
+
+    if (_reorderPointUnitMode == 'pack') {
+      if (pUnit.isEmpty || pToBase <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('หากเลือกหน่วยบรรจุ ต้องกรอกหน่วยบรรจุและอัตราเทียบหน่วยให้ครบ'),
+          ),
+        );
+        return false;
+      }
+    }
+
     if (_units.isEmpty || !_units.any((u) => u.isDefault)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1026,15 +1123,12 @@ class _AddDrugPageState extends State<AddDrugPage> {
 
     return true;
   }
-  
 
   Future<void> _submit() async {
     if (_saving) return;
 
-    // ✅ ใช้ตัว validate ใหม่
     if (!_validateBeforeSubmit()) return;
 
-    // ✅ เช็กซ้ำเฉพาะตอน "เพิ่มยาใหม่"
     if (!_isEdit) {
       try {
         final duplicateItems = await _findDuplicateDrugs();
@@ -1056,8 +1150,8 @@ class _AddDrugPageState extends State<AddDrugPage> {
 
     try {
       final code = _code.text.trim().isEmpty ? null : _code.text.trim();
-      final packToBase = _tryNum(_packToBase.text)!; // ✅ ตอนนี้บังคับแล้ว
-      final reorderPoint = _tryNum(_reorderPoint.text) ?? 0;
+      final packToBase = _tryNum(_packToBase.text)!;
+      final reorderPoint = _computedReorderPointBase();
       final expiryDays = _tryInt(_expiryAlertDays.text) ?? 90;
 
       final manufacturerNameToSave =
@@ -1370,96 +1464,100 @@ class _AddDrugPageState extends State<AddDrugPage> {
                           'หน่วยและการบรรจุ',
                         ),
                         _twoCol(
-  context,
-  left: DropdownButtonFormField<String>(
-    value: _baseUnit.isEmpty ? null : _baseUnit,
-    decoration: _customInputDecoration('หน่วยฐาน (Base) *'),
-    items: [
-      ...[
-        'เม็ด',
-        'แคปซูล',
-        'มล.',
-        'กรัม',
-        'ขวด',
-        'หลอด',
-        'ซอง',
-        'ชิ้น',
-        _baseUnit, // ⭐ รองรับหน่วยที่ผู้ใช้เพิ่ม
-      ].toSet().map(
-        (u) => DropdownMenuItem(
-          value: u,
-          child: Text(u),
-        ),
-      ),
-      const DropdownMenuItem(
-        value: '__add_new__',
-        child: Row(
-          children: [
-            Icon(Icons.add, size: 18),
-            SizedBox(width: 6),
-            Text('เพิ่มหน่วยใหม่'),
-          ],
-        ),
-      ),
-    ],
-    onChanged: (v) async {
-      if (v == '__add_new__') {
-        final ctl = TextEditingController();
+                          context,
+                          left: DropdownButtonFormField<String>(
+                            value: _baseUnit.isEmpty ? null : _baseUnit,
+                            decoration: _customInputDecoration(
+                              'หน่วยฐาน (Base) *',
+                            ),
+                            items: [
+                              ...[
+                                'เม็ด',
+                                'แคปซูล',
+                                'มล.',
+                                'กรัม',
+                                'ขวด',
+                                'หลอด',
+                                'ซอง',
+                                'ชิ้น',
+                                _baseUnit,
+                              ].toSet().map(
+                                (u) => DropdownMenuItem(
+                                  value: u,
+                                  child: Text(u),
+                                ),
+                              ),
+                              const DropdownMenuItem(
+                                value: '__add_new__',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.add, size: 18),
+                                    SizedBox(width: 6),
+                                    Text('เพิ่มหน่วยใหม่'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            onChanged: (v) async {
+                              if (v == '__add_new__') {
+                                final ctl = TextEditingController();
 
-        final result = await showDialog<String>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              title: const Text('เพิ่มหน่วยฐานใหม่'),
-              content: TextField(
-                controller: ctl,
-                decoration: const InputDecoration(
-                  labelText: 'ชื่อหน่วย เช่น Ampoule / Vial',
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('ยกเลิก'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    Navigator.pop(context, ctl.text.trim());
-                  },
-                  child: const Text('เพิ่ม'),
-                ),
-              ],
-            );
-          },
-        );
+                                final result = await showDialog<String>(
+                                  context: context,
+                                  builder: (context) {
+                                    return AlertDialog(
+                                      title: const Text('เพิ่มหน่วยฐานใหม่'),
+                                      content: TextField(
+                                        controller: ctl,
+                                        decoration: const InputDecoration(
+                                          labelText:
+                                              'ชื่อหน่วย เช่น Ampoule / Vial',
+                                        ),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context),
+                                          child: const Text('ยกเลิก'),
+                                        ),
+                                        FilledButton(
+                                          onPressed: () {
+                                            Navigator.pop(
+                                              context,
+                                              ctl.text.trim(),
+                                            );
+                                          },
+                                          child: const Text('เพิ่ม'),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
 
-        if (result != null && result.isNotEmpty) {
-          setState(() {
-            _baseUnit = result;
-          });
+                                if (result != null && result.isNotEmpty) {
+                                  setState(() {
+                                    _baseUnit = result;
+                                  });
+                                  _applyBaseUnitAsDefault();
+                                }
 
-          _applyBaseUnitAsDefault();
-        }
+                                return;
+                              }
 
-        return;
-      }
+                              setState(() {
+                                _baseUnit = v ?? 'เม็ด';
+                              });
 
-      setState(() {
-        _baseUnit = v ?? 'เม็ด';
-      });
-
-      _applyBaseUnitAsDefault();
-    },
-  ),
-
-
-
+                              _applyBaseUnitAsDefault();
+                            },
+                          ),
                           right: TextFormField(
                             controller: _packUnit,
                             decoration: _customInputDecoration(
                               'หน่วยบรรจุ (Pack) * เช่น แผง/กล่อง',
                             ),
                             validator: (v) => _req(v, 'กรุณากรอกหน่วยบรรจุ'),
+                            onChanged: (_) => setState(() {}),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -1479,6 +1577,7 @@ class _AddDrugPageState extends State<AddDrugPage> {
                             }
                             return null;
                           },
+                          onChanged: (_) => setState(() {}),
                         ),
                       ],
                     ),
@@ -1574,205 +1673,306 @@ class _AddDrugPageState extends State<AddDrugPage> {
                     ),
                   ),
 
-                  // 📦 Card 4: ข้อมูลเพิ่มเติม & สต็อก
-                  _buildCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSectionHeader(
-                          Icons.assignment_rounded,
-                          'ข้อมูลเพิ่มเติม & สต็อก',
-                        ),
-                        TextFormField(
-                          controller: _category,
-                          decoration: _customInputDecoration(
-                            'หมวดหมู่ยา * เช่น แก้ปวด',
-                          ),
-                          validator: (v) => _req(v, 'กรุณากรอกหมวดหมู่ยา'),
-                        ),
-                        const SizedBox(height: 16),
+                 // 📦 Card 4: ข้อมูลเพิ่มเติม & สต็อก
+_buildCard(
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _buildSectionHeader(
+        Icons.assignment_rounded,
+        'ข้อมูลเพิ่มเติม & สต็อก',
+      ),
 
-                        // ผู้ผลิต (บังคับ)
-                        InkWell(
-                          onTap: _showManufacturerPicker,
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: selected == null
-                                  ? Colors.grey.shade50
-                                  : cs.primary.withOpacity(0.05),
-                              border: Border.all(
-                                color: selected == null
-                                    ? Colors.grey.shade300
-                                    : cs.primary.withOpacity(0.3),
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: selected == null
-                                        ? Colors.grey.shade200
-                                        : Colors.white,
-                                    shape: BoxShape.circle,
-                                    boxShadow: selected != null
-                                        ? [
-                                            BoxShadow(
-                                              color:
-                                                  cs.primary.withOpacity(0.1),
-                                              blurRadius: 4,
-                                            ),
-                                          ]
-                                        : [],
-                                  ),
-                                  child: Icon(
-                                    Icons.domain_rounded,
-                                    color: selected == null
-                                        ? Colors.grey.shade500
-                                        : cs.primary,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        selected != null
-                                            ? (selectedName ?? '')
-                                            : 'คลิกเพื่อเลือกบริษัทผู้ผลิต *',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: selected != null
-                                              ? FontWeight.bold
-                                              : FontWeight.normal,
-                                          color: selected != null
-                                              ? Colors.black87
-                                              : Colors.grey.shade600,
-                                        ),
-                                      ),
-                                      if (selected != null) ...[
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          selectedDetailText(),
-                                          style: TextStyle(
-                                            color: Colors.grey.shade700,
-                                            fontSize: 13,
-                                            height: 1.3,
-                                          ),
-                                        ),
-                                      ]
-                                    ],
-                                  ),
-                                ),
-                                if (selected != null)
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.close_rounded,
-                                      color: Colors.grey,
-                                      size: 20,
-                                    ),
-                                    onPressed: () => setState(
-                                      () => _selectedManufacturer = null,
-                                    ),
-                                  )
-                                else
-                                  Icon(
-                                    Icons.chevron_right_rounded,
-                                    color: Colors.grey.shade400,
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
+      TextFormField(
+        controller: _category,
+        decoration: _customInputDecoration(
+          'หมวดหมู่ยา * เช่น แก้ปวด',
+        ),
+        validator: (v) => _req(v, 'กรุณากรอกหมวดหมู่ยา'),
+      ),
 
-                        const SizedBox(height: 16),
-                        _twoCol(
-                          context,
-                          left: DropdownButtonFormField<String>(
-                            value: _status,
-                            decoration:
-                                _customInputDecoration('สถานะการใช้งาน *'),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'active',
-                                child: Text('เปิดใช้งาน'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'inactive',
-                                child: Text('ปิดใช้งาน'),
-                              ),
-                            ],
-                            onChanged: (v) =>
-                                setState(() => _status = v ?? 'active'),
-                          ),
-                          right: const SizedBox.shrink(),
+      const SizedBox(height: 16),
+
+      // ผู้ผลิต
+      Text(
+        'บริษัทผู้ผลิต *',
+        style: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: Colors.grey.shade800,
+        ),
+      ),
+      const SizedBox(height: 8),
+      InkWell(
+        onTap: _showManufacturerPicker,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: selected == null
+                ? Colors.grey.shade50
+                : cs.primary.withOpacity(0.05),
+            border: Border.all(
+              color: selected == null
+                  ? Colors.grey.shade300
+                  : cs.primary.withOpacity(0.28),
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: selected == null
+                      ? Colors.grey.shade200
+                      : Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.domain_rounded,
+                  color: selected == null
+                      ? Colors.grey.shade500
+                      : cs.primary,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      selected != null
+                          ? (selectedName ?? '')
+                          : 'คลิกเพื่อเลือกบริษัทผู้ผลิต',
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: selected != null
+                            ? FontWeight.w800
+                            : FontWeight.w500,
+                        color: selected != null
+                            ? Colors.black87
+                            : Colors.grey.shade600,
+                      ),
+                    ),
+                    if (selected != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        selectedDetailText(),
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 12.8,
+                          height: 1.35,
                         ),
-                        const SizedBox(height: 16),
-                        _twoCol(
-                          context,
-                          left: TextFormField(
-                            controller: _reorderPoint,
-                            keyboardType: TextInputType.number,
-                            decoration: _customInputDecoration(
-                              'เตือนสต็อกต่ำ (หน่วยฐาน) *',
-                            ),
-                            validator: (v) {
-                              final t = (v ?? '').trim();
-                              if (t.isEmpty) {
-                                return 'กรุณากรอกค่าเตือนสต็อกต่ำ';
-                              }
-                              final n = num.tryParse(t);
-                              if (n == null || n < 0) {
-                                return 'กรุณากรอกตัวเลข ≥ 0';
-                              }
-                              return null;
-                            },
-                          ),
-                          right: TextFormField(
-                            controller: _expiryAlertDays,
-                            keyboardType: TextInputType.number,
-                            decoration: _customInputDecoration(
-                              'เตือนก่อนหมดอายุ (วัน) *',
-                            ),
-                            validator: (v) {
-                              final t = (v ?? '').trim();
-                              if (t.isEmpty) {
-                                return 'กรุณากรอกจำนวนวันเตือนหมดอายุ';
-                              }
-                              final n = int.tryParse(t);
-                              if (n == null || n < 0) {
-                                return 'กรุณากรอกตัวเลข ≥ 0';
-                              }
-                              return null;
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _exampleText,
-                          decoration: _customInputDecoration(
-                            'ตัวอย่าง / คำแนะนำวิธีใช้ *',
-                          ),
-                          validator: (v) => _req(v, 'กรุณากรอกคำแนะนำวิธีใช้'),
-                          maxLines: 2,
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _autoDispenseLabel,
-                          decoration: _customInputDecoration(
-                            'ตั้งชื่อหน่วยจ่ายอัตโนมัติ (Auto dispense label) *',
-                          ),
-                          validator: (v) =>
-                              _req(v, 'กรุณากรอก Auto dispense label'),
-                        ),
-                      ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (selected != null)
+                IconButton(
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: Colors.grey,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(
+                    () => _selectedManufacturer = null,
+                  ),
+                )
+              else
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.grey.shade400,
+                ),
+            ],
+          ),
+        ),
+      ),
+
+      const SizedBox(height: 18),
+
+      // สถานะ
+      DropdownButtonFormField<String>(
+        value: _status,
+        decoration: _customInputDecoration('สถานะการใช้งาน *'),
+        items: const [
+          DropdownMenuItem(
+            value: 'active',
+            child: Text('เปิดใช้งาน'),
+          ),
+          DropdownMenuItem(
+            value: 'inactive',
+            child: Text('ปิดใช้งาน'),
+          ),
+        ],
+        onChanged: (v) => setState(() => _status = v ?? 'active'),
+      ),
+
+      const SizedBox(height: 18),
+
+      // เตือนสต็อก + เตือนหมดอายุ
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 6,
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'เตือนสต็อกต่ำ *',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.grey.shade800,
                     ),
                   ),
+                  const SizedBox(height: 10),
+
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: Text('หน่วยฐาน ($_baseUnit)'),
+                        selected: _reorderPointUnitMode == 'base',
+                        onSelected: (_) => _changeReorderUnitMode('base'),
+                      ),
+                      ChoiceChip(
+                        label: Text(
+                          _packUnit.text.trim().isEmpty
+                              ? 'หน่วยบรรจุ'
+                              : 'หน่วยบรรจุ (${_packUnit.text.trim()})',
+                        ),
+                        selected: _reorderPointUnitMode == 'pack',
+                        onSelected: (_) => _changeReorderUnitMode('pack'),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  TextFormField(
+                    controller: _reorderPoint,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: _customInputDecoration(
+                      'ค่าเตือน (${_reorderUnitLabel()})',
+                      helperText: _reorderHelperText(),
+                    ),
+                    validator: (v) {
+                      final t = (v ?? '').trim();
+                      if (t.isEmpty) {
+                        return 'กรุณากรอกค่าเตือนสต็อกต่ำ';
+                      }
+                      final n = num.tryParse(t);
+                      if (n == null || n < 0) {
+                        return 'กรุณากรอกตัวเลข ≥ 0';
+                      }
+                      if (_reorderPointUnitMode == 'pack') {
+                        final pUnit = _packUnit.text.trim();
+                        final pToBase = _tryNum(_packToBase.text) ?? 0;
+                        if (pUnit.isEmpty || pToBase <= 0) {
+                          return 'กรุณากรอกหน่วยบรรจุและอัตราเทียบหน่วยให้ครบก่อน';
+                        }
+                      }
+                      return null;
+                    },
+                    onChanged: (_) => setState(() {}),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: cs.primary.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: cs.primary.withOpacity(0.14),
+                      ),
+                    ),
+                    child: Text(
+                      'ค่าที่บันทึกจริง = ${_fmtNum(_computedReorderPointBase())} $_baseUnit',
+                      style: TextStyle(
+                        color: cs.primary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 16),
+
+          Expanded(
+            flex: 4,
+            child: TextFormField(
+              controller: _expiryAlertDays,
+              keyboardType: TextInputType.number,
+              decoration: _customInputDecoration(
+                'เตือนก่อนหมดอายุ (วัน) *',
+                helperText: 'เช่น 30, 60, 90 วัน',
+              ),
+              validator: (v) {
+                final t = (v ?? '').trim();
+                if (t.isEmpty) {
+                  return 'กรุณากรอกจำนวนวันเตือนหมดอายุ';
+                }
+                final n = int.tryParse(t);
+                if (n == null || n < 0) {
+                  return 'กรุณากรอกตัวเลข ≥ 0';
+                }
+                return null;
+              },
+            ),
+          ),
+        ],
+      ),
+
+      const SizedBox(height: 18),
+
+      TextFormField(
+        controller: _exampleText,
+        decoration: _customInputDecoration(
+          'ตัวอย่าง / คำแนะนำวิธีใช้ *',
+          hintText: 'เช่น รับประทานครั้งละ 1 เม็ด หลังอาหาร เช้า-เย็น',
+        ),
+        validator: (v) => _req(v, 'กรุณากรอกคำแนะนำวิธีใช้'),
+        maxLines: 3,
+      ),
+
+      const SizedBox(height: 16),
+
+      TextFormField(
+        controller: _autoDispenseLabel,
+        decoration: _customInputDecoration(
+          'ตั้งชื่อหน่วยจ่ายอัตโนมัติ (Auto dispense label) *',
+          hintText: 'เช่น เม็ด / แคปซูล / มล.',
+        ),
+        validator: (v) => _req(v, 'กรุณากรอก Auto dispense label'),
+      ),
+    ],
+  ),
+),
 
                   const SizedBox(height: 20),
 
@@ -1837,7 +2037,8 @@ class _AddDrugPageState extends State<AddDrugPage> {
             child: Text(
               'คำแนะนำ:\n'
               '• หน่วยที่เปิดใช้งาน จะปรากฏในหน้า รับเข้า/จ่ายออก\n'
-              '• หน่วยฐานจะถูกล็อกเป็นค่าพื้นฐาน (ปิดหรือลบไม่ได้)',
+              '• หน่วยฐานจะถูกล็อกเป็นค่าพื้นฐาน (ปิดหรือลบไม่ได้)\n'
+              '• ค่าเตือนสต็อกต่ำจะถูกเก็บเป็น “หน่วยฐาน” เสมอ แม้กรอกเป็นหน่วยบรรจุ',
               style: TextStyle(
                 color: Colors.amber.shade900,
                 height: 1.5,

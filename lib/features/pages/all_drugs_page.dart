@@ -28,7 +28,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
   // raw rows from DB
   List<Map<String, dynamic>> _rows = [];
 
-  // ========= lifecycle =========
   @override
   void initState() {
     super.initState();
@@ -50,7 +49,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
     return u.id;
   }
 
-  // ========= data =========
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -60,14 +58,26 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
     try {
       final ownerId = _ownerId();
 
-      // NOTE: manufacturer ใน schema เป็น text (ไม่ใช่ FK) — เราโชว์เป็น text ไปเลย
       final rows = await _sb
           .from('drugs')
           .select('''
-            id, owner_id, code, generic_name, brand_name, dosage_form, form,
-            strength, base_unit, pack_unit, pack_to_base,
-            category, manufacturer, reorder_point,
-            is_active, status, updated_at, created_at
+            id,
+            owner_id,
+            code,
+            generic_name,
+            brand_name,
+            dosage_form,
+            strength,
+            base_unit,
+            pack_unit,
+            pack_to_base,
+            category,
+            manufacturer,
+            reorder_point,
+            is_active,
+            status,
+            updated_at,
+            created_at
           ''')
           .eq('owner_id', ownerId)
           .order('updated_at', ascending: false);
@@ -105,9 +115,9 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
         s(r['manufacturer']),
         s(r['category']),
         s(r['dosage_form']),
-        s(r['form']),
         s(r['strength']),
         s(r['base_unit']),
+        s(r['pack_unit']),
       ].join(' | ');
 
       return hay.contains(q);
@@ -127,16 +137,12 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
     return c;
   }
 
-  // ========= actions =========
-
-  /// ✅ toggle is_active (ปิดการใช้งานแทนการลบ)
   Future<void> _setActive({
     required String drugId,
     required bool newActive,
   }) async {
     final ownerId = _ownerId();
 
-    // ทำงาน async ก่อน (ห้ามอยู่ใน setState)
     try {
       await _sb
           .from('drugs')
@@ -147,7 +153,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
           .eq('owner_id', ownerId)
           .eq('id', drugId);
 
-      // แล้วค่อย setState แบบ sync
       if (!mounted) return;
       setState(() {
         for (final r in _rows) {
@@ -165,8 +170,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
     }
   }
 
-  /// ✅ (ทางเลือก A) ลบจริง ถ้า “ไม่มีประวัติ/ไม่มีสต็อก” เท่านั้น
-  /// ถ้าลบไม่ได้ ให้บอกเหตุผลที่ user เข้าใจ
   Future<void> _tryDeleteDrug(Map<String, dynamic> drug) async {
     final drugId = (drug['id'] ?? '').toString();
     final code = (drug['code'] ?? '').toString().trim();
@@ -199,7 +202,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
     try {
       final ownerId = _ownerId();
 
-      // 1) เช็คว่ามี transaction ไหม
       final hasIn = await _exists(
         table: 'stock_in_items',
         ownerId: ownerId,
@@ -211,7 +213,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
         drugId: drugId,
       );
 
-      // 2) เช็คว่ามีล็อตคงเหลือ > 0 ไหม
       final lots = await _sb
           .from('drug_lots')
           .select('qty_on_hand_base')
@@ -224,7 +225,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
         onHand += q;
       }
 
-      // ถ้ามีประวัติหรือมีสต็อก => ลบไม่ได้ ให้แจ้ง + เสนอปิดใช้งาน
       if (hasIn || hasOut || onHand > 0) {
         final reasons = <String>[];
         if (onHand > 0) {
@@ -244,7 +244,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
 
         _toast(msg, isError: true);
 
-        // เสนอปิดใช้งานให้เลย
         final wantDisable = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -267,8 +266,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
         return;
       }
 
-      // ลบได้จริง:
-      // ลำดับ: drug_dispense_units -> drug_lots(should be none) -> drugs
       await _sb
           .from('drug_dispense_units')
           .delete()
@@ -290,7 +287,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
 
       _toast('ลบรายการยาแล้ว');
     } catch (e) {
-      // ถ้าโดน FK กันไว้ ก็แจ้งแบบคนอ่านรู้เรื่อง
       _toast(
         'ลบไม่สำเร็จ: ยานี้อาจถูกอ้างอิงอยู่ในรายการรับเข้า/จ่ายออก หรือมีข้อมูลที่เชื่อมโยงอยู่\n'
         'แนะนำให้ใช้ “ปิดการใช้งาน” แทน\n\nรายละเอียด: $e',
@@ -318,7 +314,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
     }
   }
 
-  // ========= UI helpers =========
   String _drugName(Map<String, dynamic> d) {
     final g = (d['generic_name'] ?? '-').toString().trim();
     final b = (d['brand_name'] ?? '').toString().trim();
@@ -327,13 +322,13 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
 
   String _subtitle(Map<String, dynamic> d) {
     final brand = (d['brand_name'] ?? '').toString().trim();
-    final form = (d['dosage_form'] ?? d['form'] ?? '').toString().trim();
+    final dosageForm = (d['dosage_form'] ?? '').toString().trim();
     final strength = (d['strength'] ?? '').toString().trim();
     final base = (d['base_unit'] ?? '').toString().trim();
 
     final parts = <String>[];
     if (brand.isNotEmpty) parts.add(brand);
-    if (form.isNotEmpty) parts.add(form);
+    if (dosageForm.isNotEmpty) parts.add(dosageForm);
     if (strength.isNotEmpty) parts.add(strength);
     if (base.isNotEmpty) parts.add(base);
 
@@ -367,7 +362,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
     );
   }
 
-  // ========= build =========
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -397,7 +391,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.all(14),
                     children: [
-                      // Search
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
@@ -438,10 +431,7 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
                           ],
                         ),
                       ),
-
                       const SizedBox(height: 12),
-
-                      // Tabs
                       Wrap(
                         spacing: 10,
                         runSpacing: 10,
@@ -463,9 +453,7 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
                           ),
                         ],
                       ),
-
                       const SizedBox(height: 12),
-
                       if (list.isEmpty)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 40),
@@ -479,7 +467,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
                             ),
                           ),
                         ),
-
                       ...List.generate(list.length, (i) {
                         final d = list[i];
                         final id = (d['id'] ?? '').toString();
@@ -571,7 +558,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
                                     ),
                                   ],
                                 ),
-
                                 if (meta.isNotEmpty) ...[
                                   const SizedBox(height: 8),
                                   Text(
@@ -582,16 +568,13 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
                                     ),
                                   ),
                                 ],
-
                                 const SizedBox(height: 12),
-
                                 Wrap(
                                   spacing: 10,
                                   runSpacing: 10,
                                   children: [
                                     OutlinedButton.icon(
                                       onPressed: () async {
-                                        // เปิดหน้าแก้ไข
                                         final res = await Navigator.of(context).push<bool?>(
                                           MaterialPageRoute(builder: (_) => AddDrugPage(drugId: id)),
                                         );
@@ -602,7 +585,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
                                       icon: const Icon(Icons.edit_rounded),
                                       label: const Text('แก้ไข'),
                                     ),
-
                                     if (isActive)
                                       FilledButton.icon(
                                         onPressed: () => _setActive(drugId: id, newActive: false),
@@ -619,8 +601,6 @@ class _AllDrugsPageState extends State<AllDrugsPage> {
                                         icon: const Icon(Icons.check_rounded),
                                         label: const Text('เปิดใช้งาน'),
                                       ),
-
-                                    // (ถ้าคุณอยากให้มีปุ่มลบจริงในหน้านี้)
                                     OutlinedButton.icon(
                                       onPressed: () => _tryDeleteDrug(d),
                                       icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
